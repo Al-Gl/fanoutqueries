@@ -1,26 +1,22 @@
-# Skill: SEO Fan-Out Analyzer
+# Skill: SEO Fan-Out Analyzer (Grounding)
 
-**Description**: Analyzes SEO prompts to identify the "Fan-Out" sub-queries an AI model would likely search for to ground its answer.
+**Description**: Analyzes primary SEO prompts by leveraging Google Search Grounding to capture the actual search queries an AI model performs to answer them.
 
 ## Instructions
 When triggered with a prompt or a CSV file:
-1. Parse the input to identify the core entity and primary intent.
-2. Act as a "Query Decomposer."
-3. Generate exactly 6 "Fan-Out Queries" for each prompt using these categories:
-    - **Search Intent**: What is the immediate factual need?
-    - **Contextual Layer**: What background information is required?
-    - **Comparative Layer**: What alternatives or competitors should be checked?
-    - **Prerequisite**: What must the user know first?
-    - **Next Step**: What will the user ask after this?
-    - **Entity Deep-Dive**: Specifics about the brand/product mentioned.
-4. Format the output into a structured table.
+
+1. **Context Setup**: Identify the target market (e.g., "Denmark") and the primary user query.
+2. **Grounding Prompt**: Construct a prompt designed to trigger a comprehensive search:
+   > "Context: Target market is {target_country}. User Query: {prompt}. Please perform a comprehensive search to provide a detailed answer. Cover all aspects including intent, competitors, and background."
+3. **Execution**: Call the Gemini API with the `google_search` tool enabled.
+4. **Extraction**: Parse the response's `grounding_metadata` to extract the `web_search_queries`.
+5. **Output**: Present the list of raw search queries that were actually performed by the model.
 
 ## Example
-**Input**: "Best CRM for small law firms"
-**Fan-Out Queries**:
-1. "Top rated CRM software for legal industry 2026"
-2. "CRM features specifically for law firm case management"
-3. "Clio vs MyCase vs HubSpot for small legal teams"
-4. "Affordable CRM pricing for solo practitioners"
-5. "How to migrate legal data from Excel to CRM"
-6. "Security and compliance requirements for legal CRMs"
+**Input**: "Best CRM for small law firms" (Target: US)
+
+** captured Fan-Out Queries**:
+1. "best crm for small law firms 2024"
+2. "clio vs practice panther pricing"
+3. "legal crm features comparison"
+4. "lawmatics reviews"
