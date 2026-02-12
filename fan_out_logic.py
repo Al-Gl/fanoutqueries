@@ -21,14 +21,14 @@ def get_client(api_key=None):
 def classify_queries(client, queries):
     """
     Classifies a list of queries into search intents: Informational, Commercial, Transactional, Navigational.
-    Returns a list of dictionaries: [{'query': q, 'intent': i, 'icon': icon}, ...]
+    Returns a list of dictionaries: [{'query': q, 'intents': [i1, i2], 'icons': [icon1, icon2]}, ...]
     """
     if not queries:
         return []
 
     try:
         prompt = f"""
-        Classify the following search queries into one of these 4 intents:
+        Classify the following search queries into one or more of these 4 intents:
         - Informational (Looking for information/answers)
         - Commercial (Investigating products/services)
         - Transactional (Ready to buy/act)
@@ -37,9 +37,10 @@ def classify_queries(client, queries):
         Queries:
         {json.dumps(queries)}
 
-        Return a JSON array of objects with keys: "query", "intent", "icon".
-        For "icon", use exactly one of these emojis: 🔵 (Info), 🟡 (Comm), 🟢 (Trans), 🟣 (Nav).
-        Example: [{{"query": "best shoes", "intent": "Commercial", "icon": "🟡"}}]
+        Return a JSON array of objects with keys: "query", "intents", "icons".
+        "intents": List of applicable intents (e.g. ["Commercial", "Informational"]).
+        "icons": List of corresponding emojis: 🔵 (Info), 🟡 (Comm), 🟢 (Trans), 🟣 (Nav).
+        Example: [{{"query": "best running shoes review", "intents": ["Commercial", "Informational"], "icons": ["🟡", "🔵"]}}]
         """
 
         response = client.models.generate_content(
@@ -53,7 +54,7 @@ def classify_queries(client, queries):
         return json.loads(response.text)
     except Exception as e:
         # Fallback if classification fails
-        return [{"query": q, "intent": "Unknown", "icon": "⚪"} for q in queries]
+        return [{"query": q, "intents": ["Unknown"], "icons": ["⚪"]} for q in queries]
 
 def check_brand_visibility(client, query, brands, target_country="Denmark", persona_instruction=None):
     """
