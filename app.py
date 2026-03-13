@@ -7,7 +7,9 @@ from google import genai
 import time
 import json
 import altair as alt
+import altair as alt
 import pdf_generator
+import db_manager
 
 # --- CONFIGURATION & STATE ---
 st.set_page_config(page_title="Fan-Out Query Tool", page_icon="🕸️", layout="wide")
@@ -115,6 +117,13 @@ def render_home():
         st.markdown('<div class="main-container">', unsafe_allow_html=True)
         st.markdown('<h1 class="hero-title">Fan-Out Query Explorer</h1>', unsafe_allow_html=True)
         st.markdown('<p class="hero-subtitle">Map the search landscape. Track your brand. Dominate the results.</p>', unsafe_allow_html=True)
+        st.markdown('<p class="hero-subtitle">Map the search landscape. Track your brand. Dominate the results.</p>', unsafe_allow_html=True)
+        
+        # History Button
+        if st.button("📜 View History", type="secondary"):
+            st.session_state['page'] = 'history'
+            st.rerun()
+            
         st.markdown('</div>', unsafe_allow_html=True)
 
         # Input Form
@@ -158,8 +167,14 @@ def render_home():
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # Action Button
-                if st.button("🚀 Analyze Market", type="primary", use_container_width=True):
+                # Action Buttons
+                c_btn1, c_btn2 = st.columns(2)
+                with c_btn1:
+                    advanced_clicked = st.button("🚀 Advanced Search", type="primary", use_container_width=True, help="Full analysis with brand mentions.")
+                with c_btn2:
+                    light_clicked = st.button("⚡ Light Search", use_container_width=True, help="Only generate fan-out queries (faster).")
+                    
+                if advanced_clicked or light_clicked:
                     if not prompt_text:
                         st.error("Please enter at least one topic.")
                     else:
@@ -167,7 +182,8 @@ def render_home():
                             'target_country': target_country,
                             'primary_brand': primary_brand,
                             'competitors': competitors_str,
-                            'prompt': prompt_text
+                            'prompt': prompt_text,
+                            'search_type': 'light' if light_clicked else 'advanced'
                         }
                         st.session_state['page'] = 'processing'
                         st.rerun()
@@ -256,6 +272,7 @@ def render_processing():
         primary_brand = inputs['primary_brand'].strip() if inputs['primary_brand'] else None
         competitors = [c.strip() for c in inputs['competitors'].split(',') if c.strip()][:5]
         prompts = [p.strip() for p in inputs['prompt'].split('\n') if p.strip()]
+        search_type = inputs.get('search_type', 'advanced')
         
         tracking_brands = []
         if primary_brand: tracking_brands.append(primary_brand)
@@ -320,7 +337,7 @@ def render_processing():
                     
                     # 2. Deep Analysis
                     deep_analysis_data = []
-                    if tracking_brands and queries:
+                    if search_type != 'light' and tracking_brands and queries:
                         num_queries = len(queries)
                         # We allocate the remaining 80% of this item's progress to the deep loop
                         item_slice = (1 / total_steps) * 80 
@@ -352,7 +369,18 @@ def render_processing():
         time.sleep(0.5) 
                 
         # Save Results
+        # Save Results
         st.session_state['fanout_results'] = pd.DataFrame(results)
+        
+        # --- SAVE TO DB ---
+        try:
+           success, msg = db_manager.save_analysis(inputs, st.session_state['fanout_results'])
+           if not success:
+               st.toast(f"Note: Could not save history: {msg}", icon="⚠️")
+           else:
+               st.toast("Analysis saved to history!", icon="💾")
+        except Exception as db_e:
+           st.toast(f"Database Error: {db_e}", icon="⚠️")
         
         # Transition to Dashboard
         st.session_state['page'] = 'dashboard'
@@ -383,6 +411,7 @@ def render_dashboard():
     primary_brand = config.get('primary_brand')
     competitors = config.get('competitors', [])
     tracking_brands = config.get('tracking_brands', [])
+    search_type = st.session_state['inputs'].get('search_type', 'advanced')
     
     if result_df is None or result_df.empty:
         st.warning("No results found.")
@@ -390,7 +419,7 @@ def render_dashboard():
 
     # --- DASHBOARD LOGIC (From V2) ---
     # 1. Market Share Dashboard
-    if tracking_brands:
+    if search_type != 'light' and tracking_brands:
         st.divider()
         
         # Calculation
@@ -626,7 +655,7 @@ def render_dashboard():
     st.write("---")
     
     # PDF Export Integration
-    if st.button("📄 Export PDF Report"):
+    if search_type != 'light' and st.button("📄 Export PDF Report"):
         # Prepare Data
         # Calculate totals again for report context
         my_count = brand_counts.get(primary_brand, 0) if primary_brand else 0
@@ -674,6 +703,77 @@ def render_dashboard():
     except:
         st.download_button("📥 Download Search Data (CSV)", result_df.to_csv(index=False).encode('utf-8'), "market_intel.csv", "text/csv")
 
+def render_history():
+    """Renders the History Page."""
+    st.markdown("""
+    <style>
+    .history-card {
+        background-color: var(--secondary-background-color);
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        margin-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.title("📜 Analysis History")
+    with c2:
+        if st.button("← Back to Home"):
+            st.session_state['page'] = 'home'
+            st.rerun()
+            
+    with st.spinner("Loading history..."):
+        history = db_manager.get_history()
+        
+    if not history:
+        st.info("No past analyses found in database.")
+        return
+
+    for item in history:
+        with st.container():
+            st.markdown('<div class="history-card">', unsafe_allow_html=True)
+            hc1, hc2, hc3, hc4 = st.columns([2, 2, 4, 2])
+            
+            date_str = item.get('created_at', '')[:10] + " " + item.get('created_at', '')[11:16]
+            market = item.get('target_country', 'Unknown')
+            brand = item.get('primary_brand') or "No Brand"
+            
+            prompts = item.get('original_prompts', [])
+            prompt_txt = prompts[0] if prompts else "No prompt"
+            if len(prompts) > 1: prompt_txt += f" (+{len(prompts)-1})"
+            
+            hc1.write(f"**{date_str}**")
+            hc2.write(f"🌍 {market}")
+            hc3.write(f"📝 {prompt_txt}")
+            
+            if hc4.button("Load Report", key=f"hist_{item['id']}", use_container_width=True):
+                with st.spinner("Reconstructing report..."):
+                    meta, df = db_manager.load_analysis(item['id'])
+                    if df is not None:
+                         # Restore State
+                        st.session_state['fanout_results'] = df
+                        st.session_state['inputs'] = {
+                            'target_country': meta.get('target_country'),
+                            'primary_brand': meta.get('primary_brand'),
+                            'competitors': ",".join(meta.get('competitors') or []),
+                            'prompt': "\n".join(meta.get('original_prompts') or [])
+                        }
+                        # Competitor list safe parsing
+                        comps = meta.get('competitors') or []
+                        
+                        st.session_state['tracking_config'] = {
+                            'primary_brand': meta.get('primary_brand'),
+                            'competitors': comps,
+                            'tracking_brands': ([meta.get('primary_brand')] if meta.get('primary_brand') else []) + comps
+                        }
+                        st.session_state['page'] = 'dashboard'
+                        st.rerun()
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+
 
 # --- MAIN CONTROL FLOW ---
 if st.session_state['page'] == 'home':
@@ -682,3 +782,5 @@ elif st.session_state['page'] == 'processing':
     render_processing()
 elif st.session_state['page'] == 'dashboard':
     render_dashboard()
+elif st.session_state['page'] == 'history':
+    render_history()
